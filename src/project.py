@@ -112,7 +112,7 @@ thread_local = threading.local()
 def open_session():
 
     if hasattr(thread_local, 'session') is not True or thread_local.session is None:
-        # print "open new session"
+        print "open new session"
         thread_local.session = session_creator()
 
     return thread_local.session
@@ -126,11 +126,13 @@ def close_session(s):
         thread_local.session = None
 
     s.close()
-    # print "closed session"
+    print "closed session"
 
-def transactional(original_func):
+from functools import wraps
 
-    def inner_decorator(*args, **kwargs):
+def transactional(func):
+    @wraps(func)
+    def __inner_decorator(*args, **kwargs):
 
         s = None
 
@@ -138,14 +140,14 @@ def transactional(original_func):
 
             s = open_session()
 
-            return original_func(*args, **kwargs)
+            return func(*args, **kwargs)
 
         except Exception, e:
             raise e
         finally:
             close_session(s)
 
-    return inner_decorator
+    return __inner_decorator
 
 @app.route('/restaurant/<int:restaurant_id>/menu/json')
 @transactional
@@ -158,6 +160,18 @@ def restaurantMenuJSON(restaurant_id):
     items = s.query(MenuItem).filter_by(restaurant_id=restaurant_id).all()
 
     return jsonify(items=[i.serialize for i in items])
+
+
+@app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/json')
+@transactional
+def menuItemJSON(restaurant_id, menu_id):
+
+    s = open_session()
+
+    menuItem = s.query(MenuItem).filter_by(id=menu_id).one()
+
+    return jsonify(MenuItem=menuItem.serialize)
+
 
 if __name__ == '__main__':
     app.debug = True
