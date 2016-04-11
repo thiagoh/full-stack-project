@@ -1,7 +1,9 @@
 import sys
 import json
+import threading
 
 from flask import Flask
+from flask import jsonify
 from flask import render_template
 from flask import request
 from flask import url_for
@@ -105,7 +107,57 @@ def deleteMenuItem(restaurant_id, menu_id):
         if s != None: s.close()
         raise e
 
+thread_local = threading.local()
 
+def open_session():
+
+    if hasattr(thread_local, 'session') is not True or thread_local.session is None:
+        # print "open new session"
+        thread_local.session = session_creator()
+
+    return thread_local.session
+
+def close_session(s):
+
+    if s is None:
+        return
+
+    if hasattr(thread_local, 'session') and thread_local.session is not None and thread_local.session == s:
+        thread_local.session = None
+
+    s.close()
+    # print "closed session"
+
+def transactional(original_func):
+
+    def inner_decorator(*args, **kwargs):
+
+        s = None
+
+        try:
+
+            s = open_session()
+
+            return original_func(*args, **kwargs)
+
+        except Exception, e:
+            raise e
+        finally:
+            close_session(s)
+
+    return inner_decorator
+
+@app.route('/restaurant/<int:restaurant_id>/menu/json')
+@transactional
+def restaurantMenuJSON(restaurant_id):
+
+    s = open_session()
+
+    restaurant = s.query(Restaurant).filter_by(id=restaurant_id).one()
+
+    items = s.query(MenuItem).filter_by(restaurant_id=restaurant_id).all()
+
+    return jsonify(items=[i.serialize for i in items])
 
 if __name__ == '__main__':
     app.debug = True
